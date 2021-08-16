@@ -33,9 +33,9 @@ agents = [
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_3) AppleWebKit/535.20 (KHTML, like Gecko) Chrome/19.0.1036.7 "
     "Safari/535.20"]
 
-words = ""
 if __name__ == "__main__":
     while True:
+        words = ""
         film_id = input("输入该电影在豆瓣上的 ID：")
         print("开始爬取（此操作可能需要一些时间）")
         header = {"user-agent": "Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; WOW64; Trident/5.0)"}
