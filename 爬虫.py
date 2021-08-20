@@ -1,7 +1,12 @@
-import jieba as jb
+from re import sub
+from os import getenv
+from jieba import cut
 from requests import get
+from bs4.element import Tag
 from bs4 import BeautifulSoup as Bs
+from matplotlib import pyplot as plt
 from wordcloud import WordCloud as Wc
+from urllib.parse import unquote as uq
 
 agents = [
     'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36 '
@@ -33,38 +38,127 @@ agents = [
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_3) AppleWebKit/535.20 (KHTML, like Gecko) Chrome/19.0.1036.7 "
     "Safari/535.20"]
 
-if __name__ == "__main__":
-    while True:
-        words = ""
-        film_id = input("输入该电影在豆瓣上的 ID：")
-        print("开始爬取（此操作可能需要一些时间）")
-        header = {"user-agent": "Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; WOW64; Trident/5.0)"}
-        page = get("https://movie.douban.com/subject/%s" % film_id, headers=header).text
-        page = Bs(page, "html5lib")
 
-        name = page.findAll("title")[0].string.strip()
-        if name == "页面不存在":
-            print("错误的 ID")
+def search():
+    while True:
+        while True:  # 循环直到输入了正确的选项
+            type_ = input("读书（b）or 影视（m）or 随便（c）：")
+            if type_ != "b" and type_ != "m" and type_ != "c":
+                print("输入错误\a")
+                continue
+            else:
+                break
+        key_word = input("想要搜索些什么？：")
+
+        header = {"user-agent": "Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; WOW64; Trident/5.0)"}
+        if type_ == "b":
+            s_page = get("https://www.douban.com/search?cat=1001&q=%s" % uq(key_word), headers=header)
+        elif type_ == "m":
+            s_page = get("https://www.douban.com/search?cat=1002&q=%s" % uq(key_word), headers=header)
+        else:
+            s_page = get("https://www.douban.com/search?q=%s" % uq(key_word), headers=header)
+
+        s_page.encoding = s_page.apparent_encoding
+        s_page = Bs(s_page.text, "html5lib")
+
+        c_list = s_page.findAll("div", class_="content")
+        if not c_list:
+            print("未搜索到结果")
+            continue
+        else:
+            n = 0
+            links = []
+            for t in c_list:  # type: Tag
+                n += 1
+                try:
+                    if t.div.h3.span.string == "[电影]" or t.div.h3.span.string == "[书籍]":
+                        print("=+" * 20)
+                        print(str(n) + "、" + t.div.h3.a.string, end="")
+                        if type_ == "c":
+                            print(t.div.h3.span.string)
+
+                        text = sub(r"[\n ]+", " ", t.div.div.text)
+                        print(text)
+                        links.append(t.find("a").attrs["href"])
+                except:
+                    continue
+
+            if len(links) == 0:
+                print("未搜索到结果")
+                continue
+        break
+
+    while True:
+        try:
+            choose = int(input("选择一个选项，输入这个选项的序号："))
+
+            scope = len(links)
+            if 1 <= choose <= scope:
+                return links[choose - 1]
+            else:
+                raise ValueError
+
+        except ValueError:
+            print("输入错误")
             continue
 
-        for i in range(20):
-            url = "https://movie.douban.com/subject/%s/comments?start=%d" % (film_id, i * 20)
-            headers = {"user-agent": agents[i]}
-            page = get(url, headers=headers)
-            page = page.text
-            page = Bs(page, "html5lib")
-            page = page.findAll(class_="short")
-            for t in page:
-                words += t.string
 
-        with open("%s 评论.txt" % name, "w", encoding="utf-8") as file_obj:
-            file_obj.write(words)
+def spider(url: str):
+    global agents
 
-        words = "".join(jb.lcut(words))
+    header = {"user-agent": "Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; WOW64; Trident/5.0)"}
+    print("正在解析 URL...")
+    url = get(url, headers=header).url  # 使用浏览器浏览参数 url 时出现了 302 重定向，获取重定向后的地址
 
-        cloud = Wc(background_color="white", width=2000, height=2000,
-                   font_path="C:/Windows/Fonts/STZHONGS.TTF")  # 字体文件路径可能需要修改
-        cloud.generate(words)
-        cloud.to_file("%s 评论词云.webp" % name)
+    while True:
+        print("选择爬取评论的类型")
+        type_ = input("好（h） or 一般（m） or 差（l） or 全部（a）：")
+        if type_ != "h" and type_ != "m" and type_ != "l" and type_ != "a":
+            print("选择错误")
+            continue
+        else:
+            if type_ != "a":
+                url += "comments?percent_type=%s&" % type_
+            else:
+                url += "comments?"
+            break
 
-        print("Finished.")
+    print("开始爬取评论...")
+    words = ""
+    name = ""
+    for i in range(20):
+        crawl_url = url + "start=" + str(i * 20)
+        page = get(crawl_url, headers={"user-agent": agents[i]})
+        page.encoding = "utf-8"
+        page = Bs(page.text, "html5lib")
+        comments = page.findAll("span", class_="short")
+        for t in comments:  # type: Tag
+            words += t.string
+
+        if name == "":
+            name = page.find("title").string.strip()
+
+    print("开始写入文件...")
+    with open(f"{name}.txt", "w", encoding="utf-8") as file_obj:
+        file_obj.write(words)
+
+    print("开始分词...")
+    words = " ".join(cut(words))
+
+    print("开始生成词云...")
+    sys_drive = getenv("SystemDrive")
+    cloud = Wc(background_color="white", width=2000, height=2000,
+               font_path=f"{sys_drive}/Windows/Fonts/STZHONGS.TTF")  # 字体文件路径可能需要修改
+    cloud.generate(words)
+    cloud.to_file(f"{name}.webp")
+
+    plt.imshow(cloud)
+    plt.axis("off")
+    print("完成！")
+    plt.show()
+
+
+if __name__ == "__main__":
+    while True:
+        link = search()
+        spider(link)
